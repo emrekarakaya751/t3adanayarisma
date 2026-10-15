@@ -1,0 +1,55 @@
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Yönetici • T3'Adana Yarışma Dünyası</title><link rel="stylesheet" href="style.css"></head><body><div class="w">
+<div id="lock"><h1>Yönetici Girişi</h1><div class="c"><input id="pw" type="password" placeholder="Şifre" autocomplete="current-password"><button onclick="login()">Giriş</button><div class="sm" id="pm"></div></div></div>
+<div id="h"></div>
+<div id="ed" style="display:none"><h1>Yarışma Düzenle</h1><input id="nm" placeholder="Yarışma adı (örn. Yarışma 1)"><div id="qs"></div><button onclick="add()" style="background:#fff">Soru Ekle</button><button onclick="save()">Kaydet</button><button onclick="back()" style="background:#ddd">← Vazgeç</button><div class="sm" id="m"></div></div>
+<div id="l"></div></div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="config.js"></script><script src="common.js"></script>
+<script>
+const blank=()=>({t:'',o:['','','',''],c:0,d:20});
+let C={},cur,Q,pin,G,live;
+const SALT='t3adana-018c6d113c73',HASH='b9cdf2defebf711dbc9635ac5cbb3e5b91b0678c81fbdbb8567b4271e318cfc8';
+const sha=async v=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(SALT+v)))].map(b=>b.toString(16).padStart(2,'0')).join('');
+async function login(){if(await sha($('pw').value)==HASH){sessionStorage.adm='1';unlock()}else{$('pm').textContent='Şifre yanlış.';$('pw').value=''}}
+function unlock(){$('lock').style.display='none';db.ref('contests').on('value',s=>{C=s.val()||{};if(!live&&$('ed').style.display=='none')H()});H()}
+$('pw').addEventListener('keydown',e=>{if(e.key=='Enter')login()});
+if(sessionStorage.adm=='1')unlock();
+function H(){$('h').style.display='block';
+ $('h').innerHTML=`<h1>Yönetici Paneli<br><small>T3'Adana Yarışma Dünyası</small></h1><button onclick="ed()">Yeni Yarışma Hazırla</button>`+
+ (Object.entries(C).sort((a,b)=>(a[1].t||0)-(b[1].t||0)).map(([id,c])=>`<div class=c><b>${esc(c.name)}</b><div class=sm>${c.qs.length} soru</div><button onclick="openRoom('${id}')">Odayı Aç (PIN üret)</button><div class=row><button onclick="ed('${id}')" style="background:#fff">Düzenle</button><button onclick="rm('${id}')" style="background:#7f1020;color:#fff">Sil</button></div></div>`).join('')||'<div class="c sm">Henüz kayıtlı yarışma yok. Yukarıdan ilk yarışmanı hazırla.</div>')}
+function ed(id){cur=id||null;Q=id?JSON.parse(JSON.stringify(C[id].qs)):[blank()];$('nm').value=id?C[id].name:'';$('m').textContent='';
+ $('h').style.display='none';$('ed').style.display='block';R()}
+function back(){$('ed').style.display='none';H()}
+function R(){$('qs').innerHTML=Q.map((q,i)=>`<div class=c><b>Soru ${i+1}</b><button onclick="del(${i})" style="width:auto;padding:6px 12px;float:right;margin:0">Sil</button><textarea rows=2 placeholder="Soru metni" data-i=${i} data-k=t>${esc(q.t)}</textarea>${q.o.map((o,j)=>`<div class=row><input type=radio name=c${i} ${q.c==j?'checked':''} data-i=${i} data-k=c data-j=${j}><input placeholder="Şık ${'ABCD'[j]}" value="${esc(o)}" data-i=${i} data-k=o data-j=${j}></div>`).join('')}<div class=sm>Yuvarlak = doğru şık</div><label>Cevap süresi (sn)<input type=number min=5 max=120 value=${q.d} data-i=${i} data-k=d></label></div>`).join('')}
+['input','change'].forEach(ev=>$('qs').addEventListener(ev,e=>{const d=e.target.dataset,v=e.target.value;if(!d.k)return;const q=Q[d.i];
+ if(d.k=='t')q.t=v;else if(d.k=='o')q.o[d.j]=v;else if(d.k=='c')q.c=+d.j;else q.d=Math.max(5,+v||20)}));
+function add(){Q.push(blank());R()}
+function del(i){if(Q.length>1){Q.splice(i,1);R()}}
+function save(){const name=$('nm').value.trim();
+ if(!name||Q.some(q=>!q.t.trim()||q.o.some(o=>!o.trim()))){$('m').textContent='Yarışma adı, tüm soru metinleri ve şıklar doldurulmalı.';return}
+ const r=cur?db.ref('contests/'+cur):db.ref('contests').push();
+ r.set({name,qs:Q,t:cur?(C[cur].t||Date.now()):Date.now()}).then(back).catch(()=>$('m').textContent='Kaydedilemedi. Firebase kurallarına "contests" eklediğinden emin ol (README).')}
+function rm(id){if(confirm('"'+C[id].name+'" silinsin mi?'))db.ref('contests/'+id).remove()}
+function openRoom(id){pin=String(Math.floor(100000+Math.random()*900000));
+ db.ref('games/'+pin).set({state:'lobby',qi:-1,qs:C[id].qs,title:C[id].name}).then(()=>{live=1;$('h').style.display='none';
+  db.ref('games/'+pin).on('value',s=>{G=s.val();if(G)L()});setInterval(tick,250)})}
+function L(){const rk=rank(G.players),n=rk.length,st=G.state,q=(G.qs||[])[G.qi],link=location.origin+location.pathname.replace('admin.html','')+'?pin='+pin;
+ let h=`<div class=c><div class=sm>${esc(G.title||'')}</div><div class=sm>Oyun PIN</div><div class=big>${pin}</div><div class=sm>Yarışmacı linki:<br>${esc(link)}</div></div>`;
+ if(st=='lobby')h+=`<button onclick=nxt(now()) ${n?'':'disabled'}>Yarışmayı Başlat (${n} kişi)</button>`;
+ else if(st=='q'){const k=Object.keys(((G.ans||{})[G.qi])||{}).length;h+=`<div class=c><div class=sm>Soru ${G.qi+1}/${G.qs.length} • ${k}/${n} cevapladı</div><div class=big id=t></div><h2>${esc(q.t)}</h2></div>`}
+ else if(st=='r')h+=`<div class=c><div class=sm>Doğru cevap</div><h2 class=ok>${'ABCD'[q.c]}) ${esc(q.o[q.c])}</h2><div class=sm>Sonraki soruya otomatik geçilecek…</div></div>`;
+ else h+=`<div class=c><h1>Yarışma bitti</h1></div><button onclick=location.reload()>Yönetici Paneline Dön</button>`;
+ h+=`<div class=c><b>Sıralama (${n} yarışmacı)</b>`+rk.map((x,i)=>`<div class=r><span>${i+1}. ${esc(x.n)} <small>${esc(x.e||'')}</small></span><b>${x.s||0}</b></div>`).join('')+'</div>';
+ $('l').innerHTML=h;tk()}
+function tk(){const t=$('t');if(t&&G&&G.state=='q')t.textContent='⏱ '+Math.max(0,Math.ceil((G.qStart+G.qs[G.qi].d*1000-now())/1000))}
+function tick(){tk();if(!G)return;const t=now(),q=(G.qs||[])[G.qi];
+ if(G.state=='q'&&t>=G.qStart+q.d*1000)fin(q,t);else if(G.state=='r'&&t>=G.rEnd)nxt(t)}
+// Puan: doğruysa 500–1000, ne kadar hızlıysa o kadar yüksek
+function fin(q,t){const a=(G.ans||{})[G.qi]||{},u={},p={},D=q.d*1000;
+ Object.keys(G.players||{}).forEach(id=>{const x=a[id];let s=0;
+  if(x&&x.a==q.c&&x.t-G.qStart<=D+1500)s=Math.round(1000-500*Math.min(D,Math.max(0,x.t-G.qStart))/D);
+  p[id]=s;u['players/'+id+'/s']=(G.players[id].s||0)+s});
+ u.pts=p;u.state='r';u.rEnd=t+6000;db.ref('games/'+pin).update(u)}
+function nxt(t){const i=G.qi+1;db.ref('games/'+pin).update(i<G.qs.length?{state:'q',qi:i,qStart:t,pts:null}:{state:'end'})}
+</script></body></html>
